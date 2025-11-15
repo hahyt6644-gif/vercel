@@ -2,14 +2,14 @@ import { Innertube } from "youtubei.js";
 
 export default async function latest(req, res) {
   try {
-    const { username } = req.query;
+    const username = req.query.username;
     if (!username)
       return res.status(400).json({ error: "Missing username" });
 
     const yt = await Innertube.create({
       client_type: "WEB_REMIX",
       enable_safety_mode: false,
-      fetch: (input, init) => fetch(input, init)
+      fetch: (...args) => fetch(...args)
     });
 
     const channel = await yt.getChannel(`@${username}`);
@@ -17,7 +17,7 @@ export default async function latest(req, res) {
     const id = video.id;
 
     const info = await yt.getInfo(id);
-    const formats = extractFormats(info.streaming_data);
+    const formats = extract(info.streaming_data);
 
     res.json({
       success: true,
@@ -33,11 +33,11 @@ export default async function latest(req, res) {
   }
 }
 
-function extractFormats(data = {}) {
+function extract(data = {}) {
   const out = { "360p": null, "480p": null, "720p": null, "audio": null };
-  const list = [...(data.formats || []), ...(data.adaptive_formats || [])];
+  const all = [...(data.formats || []), ...(data.adaptive_formats || [])];
 
-  for (const f of list) {
+  for (const f of all) {
     if (f.height === 360) out["360p"] = f.url;
     if (f.height === 480) out["480p"] = f.url;
     if (f.height === 720) out["720p"] = f.url;
