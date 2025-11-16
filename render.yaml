@@ -2,7 +2,7 @@ services:
   - type: web
     name: ytapi-cloud
     env: node
+    region: singapore
     plan: free
     buildCommand: "npm install"
-    startCommand: "npm start"
-    runtime: "node18"
+    startCommand: "node server.js"
