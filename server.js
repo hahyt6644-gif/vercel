@@ -1,59 +1,72 @@
-import express from 'express';
-import ytdl from 'ytdl-core';
-import puppeteer from 'puppeteer';
+import express from "express";
+import { Innertube } from "youtubei.js";
 
 const app = express();
 
-async function getLatestVideoId(username) {
-  const channelUrl = `https://www.youtube.com/user/${username}/videos`;
+// Initialize YouTube client once
+let yt;
+async function initYT() {
+  if (!yt) {
+    yt = await Innertube.create({
+      client_type: "WEB_REMIX",
+      enable_safety_mode: false,
+      fetch: (...args) => fetch(...args)
+    });
 
-  const browser = await puppeteer.launch({
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
-  const page = await browser.newPage();
-
-  await page.goto(channelUrl, { waitUntil: 'networkidle2' });
-
-  // Wait for video links to load
-  await page.waitForSelector('a#video-title');
-
-  // Extract first video ID on the page
-  const videoId = await page.evaluate(() => {
-    const videoLink = document.querySelector('a#video-title');
-    if (!videoLink) return null;
-    const url = new URL(videoLink.href);
-    return url.searchParams.get('v');
-  });
-
-  await browser.close();
-
-  if (!videoId) throw new Error('Could not find latest video ID for username: ' + username);
-  return videoId;
+    console.log("YouTube client loaded");
+  }
 }
 
-app.get('/latest-video', async (req, res) => {
-  const username = req.query.username;
-  if (!username) return res.status(400).json({ error: 'username query parameter is required' });
+// Root check
+app.get("/", (req, res) => {
+  res.json({ status: "YouTube Latest Downloader API is running" });
+});
 
+// MAIN ENDPOINT → Get latest video + download link
+app.get("/latest", async (req, res) => {
   try {
-    const videoId = await getLatestVideoId(username);
-    const videoUrl = 'https://www.youtube.com/watch?v=' + videoId;
+    const username = req.query.username;
+    if (!username)
+      return res.status(400).json({ error: "Missing ?username=" });
 
-    const info = await ytdl.getInfo(videoUrl);
+    await initYT();
 
-    const format = ytdl.chooseFormat(info.formats, { quality: 'highestvideo' });
+    // Get channel info via @handle
+    const channel = await yt.getChannel(`@${username}`);
 
-    if (!format || !format.url) {
-      return res.status(404).json({ error: 'No downloadable format found' });
-    }
+    // Latest uploaded video
+    const latest = channel.videos[0];
+    const videoId = latest.id;
 
-    res.json({ videoId, downloadUrl: format.url });
+    // Fetch full video info
+    const info = await yt.getInfo(videoId);
+
+    // All playable formats
+    const formats = [
+      ...info.streaming_data.formats,
+      ...info.streaming_data.adaptive_formats
+    ];
+
+    // Pick best quality with URL
+    const best = formats
+      .filter(f => f.url && f.height)
+      .sort((a, b) => b.height - a.height)[0];
+
+    if (!best)
+      return res.status(500).json({ error: "No downloadable formats available" });
+
+    // Response
+    res.json({
+      title: latest.title.text,
+      id: videoId,
+      download_url: best.url
+    });
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: String(err) });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Start server
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log("Server running on port " + port));
