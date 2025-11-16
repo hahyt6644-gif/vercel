@@ -1,13 +1,10 @@
 {
   "name": "ytapi-cloud",
   "version": "1.0.0",
-  "type": "module",
   "main": "server.js",
+  "type": "module",
   "dependencies": {
-    "express": "^4.21.0",
-    "youtubei.js": "8.1.0"
-  },
-  "scripts": {
-    "start": "node server.js"
+    "express": "^4.18.2",
+    "rss-parser": "^3.12.0"
   }
 }
