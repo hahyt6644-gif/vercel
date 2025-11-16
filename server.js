@@ -1,35 +1,20 @@
 import express from "express";
 import Parser from "rss-parser";
-import fetch from "node-fetch";
 
 const app = express();
 const parser = new Parser();
 
-// Get channelId from ANY username or handle
-async function getChannelId(input) {
-  const handle = input.startsWith("@") ? input : `@${input}`;
-
-  const url = `https://www.youtube.com/${handle}`;
-  const html = await fetch(url).then(r => r.text());
-
-  const match = html.match(/"channelId":"(UC[0-9A-Za-z_-]{22})"/);
-
-  return match ? match[1] : null;
-}
-
+// 🟢 Get latest video using ONLY channel ID
 app.get("/latest", async (req, res) => {
   try {
-    const uname = req.query.username;
-    if (!uname) return res.json({ error: "Missing ?username=" });
+    const channelId = req.query.channel_id;
 
-    // Step 1: Resolve channelId
-    const channelId = await getChannelId(uname);
-
-    if (!channelId) {
-      return res.json({ error: "Channel not found" });
+    if (!channelId || !channelId.startsWith("UC")) {
+      return res.status(400).json({
+        error: "Missing or invalid ?channel_id= (must start with UC...)"
+      });
     }
 
-    // Step 2: Fetch RSS feed
     const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
     const feed = await parser.parseURL(feedUrl);
 
@@ -37,12 +22,10 @@ app.get("/latest", async (req, res) => {
       return res.json({ error: "No videos found" });
     }
 
-    // Step 3: Extract latest video
     const latest = feed.items[0];
     const videoId = latest.id.replace("yt:video:", "");
 
     res.json({
-      input: uname,
       channel_id: channelId,
       channel_title: feed.title,
       title: latest.title,
@@ -50,13 +33,46 @@ app.get("/latest", async (req, res) => {
       url: `https://www.youtube.com/watch?v=${videoId}`
     });
 
-  } catch (error) {
-    res.json({ error: String(error) });
+  } catch (err) {
+    res.json({ error: String(err) });
   }
 });
 
+// 🟢 Get ALL videos YouTube RSS provides (max 15)
+app.get("/allvideos", async (req, res) => {
+  try {
+    const channelId = req.query.channel_id;
+
+    if (!channelId || !channelId.startsWith("UC")) {
+      return res.status(400).json({
+        error: "Missing or invalid ?channel_id= (must start with UC...)"
+      });
+    }
+
+    const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+    const feed = await parser.parseURL(feedUrl);
+
+    const videos = feed.items.map(item => ({
+      title: item.title,
+      video_id: item.id.replace("yt:video:", ""),
+      url: `https://www.youtube.com/watch?v=${item.id.replace("yt:video:", "")}`
+    }));
+
+    res.json({
+      channel_id: channelId,
+      channel_title: feed.title,
+      total_videos: videos.length,
+      videos
+    });
+
+  } catch (err) {
+    res.json({ error: String(err) });
+  }
+});
+
+// root
 app.get("/", (req, res) => {
-  res.json({ status: "YouTube Latest Video API is Running" });
+  res.json({ status: "YouTube API using Channel ID is running" });
 });
 
 const port = process.env.PORT || 10000;
