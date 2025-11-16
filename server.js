@@ -5,47 +5,59 @@ import fetch from "node-fetch";
 const app = express();
 const parser = new Parser();
 
-// Extract channelId from @username
-async function getChannelId(username) {
-  const url = `https://www.youtube.com/@${username.replace(/^@/, "")}`;
+// Get channelId from ANY username or handle
+async function getChannelId(input) {
+  const handle = input.startsWith("@") ? input : `@${input}`;
+
+  const url = `https://www.youtube.com/${handle}`;
   const html = await fetch(url).then(r => r.text());
+
   const match = html.match(/"channelId":"(UC[0-9A-Za-z_-]{22})"/);
+
   return match ? match[1] : null;
 }
 
-app.get("/allvideos", async (req, res) => {
+app.get("/latest", async (req, res) => {
   try {
-    const username = req.query.username;
-    if (!username) return res.json({ error: "Missing ?username=" });
+    const uname = req.query.username;
+    if (!uname) return res.json({ error: "Missing ?username=" });
 
-    // Step 1: get channelId
-    const channelId = await getChannelId(username);
-    if (!channelId) return res.json({ error: "Channel not found" });
+    // Step 1: Resolve channelId
+    const channelId = await getChannelId(uname);
 
-    // Step 2: fetch RSS feed
+    if (!channelId) {
+      return res.json({ error: "Channel not found" });
+    }
+
+    // Step 2: Fetch RSS feed
     const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
     const feed = await parser.parseURL(feedUrl);
 
-    // Step 3: extract all video URLs
-    const videos = feed.items.map(item => {
-      const videoId = item.id.replace("yt:video:", "");
-      return {
-        title: item.title,
-        video_id: videoId,
-        url: `https://www.youtube.com/watch?v=${videoId}`
-      };
-    });
+    if (!feed.items.length) {
+      return res.json({ error: "No videos found" });
+    }
+
+    // Step 3: Extract latest video
+    const latest = feed.items[0];
+    const videoId = latest.id.replace("yt:video:", "");
 
     res.json({
+      input: uname,
       channel_id: channelId,
-      total_videos_found: videos.length,
-      videos
+      channel_title: feed.title,
+      title: latest.title,
+      video_id: videoId,
+      url: `https://www.youtube.com/watch?v=${videoId}`
     });
 
-  } catch (e) {
-    res.json({ error: String(e) });
+  } catch (error) {
+    res.json({ error: String(error) });
   }
 });
 
+app.get("/", (req, res) => {
+  res.json({ status: "YouTube Latest Video API is Running" });
+});
+
 const port = process.env.PORT || 10000;
-app.listen(port, () => console.log("Server running on port", port));
+app.listen(port, () => console.log("Server running on port " + port));
