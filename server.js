@@ -3,70 +3,59 @@ import { Innertube } from "youtubei.js";
 
 const app = express();
 
-// Initialize YouTube client once
 let yt;
+
 async function initYT() {
   if (!yt) {
     yt = await Innertube.create({
-      client_type: "WEB_REMIX",
+      client_type: "WEB", // ← NO SIGNATURE DECIPHER NEEDED
       enable_safety_mode: false,
-      fetch: (...args) => fetch(...args)
+      fetch: (input, init) => globalThis.fetch(input, init)
     });
 
     console.log("YouTube client loaded");
   }
 }
 
-// Root check
 app.get("/", (req, res) => {
-  res.json({ status: "YouTube Latest Downloader API is running" });
+  res.json({ status: "YT API Working" });
 });
 
-// MAIN ENDPOINT → Get latest video + download link
 app.get("/latest", async (req, res) => {
   try {
     const username = req.query.username;
-    if (!username)
-      return res.status(400).json({ error: "Missing ?username=" });
+    if (!username) return res.status(400).json({ error: "Missing username" });
 
     await initYT();
 
-    // Get channel info via @handle
     const channel = await yt.getChannel(`@${username}`);
-
-    // Latest uploaded video
     const latest = channel.videos[0];
     const videoId = latest.id;
 
-    // Fetch full video info
     const info = await yt.getInfo(videoId);
 
-    // All playable formats
-    const formats = [
-      ...info.streaming_data.formats,
-      ...info.streaming_data.adaptive_formats
-    ];
+    // No signature decipher needed, get direct URLs only
+    const urls = [];
 
-    // Pick best quality with URL
-    const best = formats
-      .filter(f => f.url && f.height)
-      .sort((a, b) => b.height - a.height)[0];
+    if (info.streaming_data?.formats) {
+      info.streaming_data.formats.forEach(f => {
+        if (f.url) urls.push({ quality: f.qualityLabel, url: f.url });
+      });
+    }
 
-    if (!best)
-      return res.status(500).json({ error: "No downloadable formats available" });
+    if (!urls.length) return res.json({ error: "No downloadable formats" });
 
-    // Response
     res.json({
+      channel: username,
       title: latest.title.text,
-      id: videoId,
-      download_url: best.url
+      video_id: videoId,
+      downloads: urls
     });
 
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    res.json({ error: String(err) });
   }
 });
 
-// Start server
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log("Server running on port " + port));
+const port = process.env.PORT || 10000;
+app.listen(port, () => console.log("Server running on port", port));
